@@ -89,9 +89,6 @@ jobs:
         DOWNSTREAM_BRANCH: dev-19.07
       run: git push origin $DOWNSTREAM_BRANCH
 
-    - name: 准备结束
-      uses: actions/checkout@v2
-
     - name: 开始安装编译所需系统
       env:
         DEBIAN_FRONTEND: noninteractive
