@@ -1,0 +1,197 @@
+#
+#
+# 感谢以下两位大神的一键编译脚本
+# 
+# Copyright (C) 2019 P3TERX <https://p3terx.com>
+# <https://github.com/P3TERX/Actions-OpenWrt.git>
+#
+# Copyright (C) 2019 KFERMercer <KFER.Mercer@gmail.com>
+# <https://github.com/KFERMercer/OpenWrt-CI>
+#
+#
+#修改以下代码或者开启触发开关都好，要严格按格式对好,前面有多少空格也要看清楚
+#代码里有 name: 后面的内容随便改,冒号后面是有个空格的,如果修改固件名字就要考虑能不能显示出你想要的
+#
+
+name: 19.07-OpenWrt 固件
+
+on:
+  repository_dispatch:
+
+#编辑任意指定文件触发开始编译(去掉下面5个#开启,最下面一行是指定修改什么文件就触发编译,我现在是修改1907.config文件触发)
+#  push:
+#    branches:
+#      - master
+#    paths:
+#      - '1907.config'
+
+
+#release发布触发开始编译(只是一个触发条件,不会发布的,又麻烦,没卵用,不用研究)
+#  release:
+#    types: published
+
+
+#定时触发开始编译(utc時間)(开启定时编译请先关闭SSH,要不然SSH没人管,会卡SSH编译失败)
+#  schedule:
+#    - cron: 0 8 */9 * *
+
+
+#点☆Star触发开始编译
+  watch:
+#    types: started
+
+
+env:
+  CONFIG_FILE: 1907.config
+  DIY_OP_SH: 1907.sh
+  SSH_ACTIONS: true
+  UPLOAD_BIN_DIR: false
+  UPLOAD_CONFIG: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_COWTRANSFER: false
+  UPLOAD_WETRANSFER: false
+  TZ: Asia/Shanghai
+
+
+jobs:
+  build:
+    name: 编译OpenWrt-19.07固件
+    runs-on: ubuntu-18.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+    - name: 准备结束
+      uses: actions/checkout@main
+      with:
+        ref: dev-19.07
+        fetch-depth: 0
+        lfs: true
+    - name: 同步更新源码
+      run : |
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+    - name: 更新。。。。。。
+      run: git pull https://github.com/Lienol/openwrt.git --log --no-commit
+    - name: 更新中。。。。。。
+      run: |
+        if [ -f ./.git/MERGE_MSG ]; then
+        mkdir ./tmp && cp ./.git/MERGE_MSG ./tmp/message
+        sed -i "1c [bot] AutoMerging: merge all upstream's changes:" ./tmp/message
+        sed -i '/^\#.*/d' ./tmp/message
+        git commit --file="./tmp/message"
+        else
+        echo "There is no merge commits."
+        fi
+    - name: 更新完毕
+      env:
+        DOWNSTREAM_BRANCH: dev-19.07
+      run: git push origin $DOWNSTREAM_BRANCH
+
+    - name: 开始安装编译所需系统
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        docker rmi `docker images -q`
+        sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /etc/apt/sources.list.d
+        sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
+        sudo -E apt-get update
+        sudo -E apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs gcc-multilib g++-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler antlr3 gperf swig
+        sudo -E apt-get -y autoremove --purge
+        sudo -E apt-get clean
+        sudo timedatectl set-timezone "$TZ"
+        df -h
+
+    - name: 加载自定义设置
+      run: |
+        chmod +x $DIY_OP_SH
+        $GITHUB_WORKSPACE/$DIY_OP_SH
+
+    - name: 下载feeds和安装自定义设置
+      run: |
+        ./scripts/feeds clean
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: 加载1907.config设置
+      run: |
+        [ -e files ] && mv files ./files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE ./.config
+
+    - name: SSH远程连接服务器配置固件
+      uses: P3TERX/debugger-action@main
+      if: env.SSH_ACTIONS == 'true' || contains(github.event.action, 'ssh')
+
+    - name: 下载软件包
+      id: package
+      run: |
+        make defconfig
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: 开始编译固件
+      id: compile
+      run: |
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "::set-output name=status::success"
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "::set-env name=DEVICE_NAME::$(cat DEVICE_NAME)"
+        echo "::set-env name=FILE_DATE::$(date "+%Y-%m-%d %H.%M.%S")"
+
+    - name: 检查github储存空间情况
+      if: (!cancelled())
+      run: df -hT
+
+    - name: 上传bin文件夹(固件+ipk)在github空间
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
+        path: ./bin
+
+    - name: 提取config.buildinfo配置文件
+      id: config
+      run: |
+          rm -rf config && mkdir config
+          find bin/targets/ -name "*config.buildinfo*" | xargs -i mv -f {} config
+          echo "::set-output name=status::success"
+    - name: 上传.config配置文件在github空间    
+      if: steps.config.outputs.status == 'success' && env.UPLOAD_CONFIG == 'true'
+      uses: actions/upload-artifact@main
+      with:
+        name: config.buildinfo_${{ env.FILE_DATE }}
+        path: ./config
+
+    - name: 整理固件文件夹
+      id: organizer
+      run: |
+        cd bin/targets/*/*
+        rm -rf packages && mkdir packages
+        find -name "*.buildinfo*" | xargs -i mv -f {} packages
+        find -name "*sha256sums*" | xargs -i mv -f {} packages
+        rm -rf packages
+        echo "::set-env name=FIRMWARE::$PWD"
+        echo "::set-output name=status::success"
+        
+    - name: 上传固件在github空间
+      uses: actions/upload-artifact@main
+      if: steps.organizer.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
+      with:
+        name: OpenWrt_firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: 上传固件到奶牛快传
+      if: steps.organizer.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
+        echo "::warning file=↓↓无需注册直接下载↓↓奶牛快传下载地址↓↓::$(cat cowtransfer.log | grep https)"
+
+    - name: 上传固件到WeTransfer
+      if: steps.organizer.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+        echo "::warning file=↓↓无需注册直接下载↓↓wetransfer下载地址↓↓::$(cat wetransfer.log | grep https)"
+
