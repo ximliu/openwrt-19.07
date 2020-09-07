@@ -17,7 +17,7 @@ sed -i 's/OpenWrt/OpenWrt-123/g' ./package/base-files/files/bin/config_generate
 
 
 # 修改 banne 文件（不要修改此行代码,修改错误怕弄的diy-lede.sh文件失效,不需要的话前面加#，或者全行代码删除了）
-rm -rf ./package/base-files/files/etc/banne && cd .. && cp -f ./banner openwrt/package/base-files/files/etc/ && cd openwrt
+rm -rf ./package/base-files/files/etc/banne && cp -f ./banner ./package/base-files/files/etc/
 
 #内核版本是会随着源码更新而改变的，在Lienol/openwrt的源码查看最好，以X86机型为例，源码的target/linux/x86文件夹可以看到有几个内核版本，x86文件夹里Makefile就可以查看源码正在使用什么内核
 #修改版本内核（19.07默认使用4.14内核，还有4.19跟4.9的内核，自行选择。这个跟LEDE的有点不一样，这个是修改一行代码的）
