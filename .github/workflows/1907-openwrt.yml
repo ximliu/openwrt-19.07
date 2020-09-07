@@ -106,20 +106,18 @@ jobs:
     - name: 加载feeds和自定义设置
       run: |
         chmod +x $DIY_OP_SH
-        cd openwrt
         $GITHUB_WORKSPACE/$DIY_OP_SH
 
     - name: 下载安装feeds和自定义设置
       run: |
-        cd openwrt
         ./scripts/feeds clean
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
     - name: 加载1907.config设置
       run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        [ -e files ] && mv files ./files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE ./.config
 
     - name: SSH远程连接服务器配置固件
       uses: P3TERX/debugger-action@main
@@ -128,7 +126,6 @@ jobs:
     - name: 下载软件包
       id: package
       run: |
-        cd openwrt
         make defconfig
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
@@ -137,7 +134,6 @@ jobs:
     - name: 开始编译固件
       id: compile
       run: |
-        cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "::set-output name=status::success"
@@ -154,13 +150,13 @@ jobs:
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
-        path: openwrt/bin
+        path: ./bin
 
     - name: 提取config.buildinfo配置文件
       id: config
       run: |
           rm -rf config && mkdir config
-          find openwrt/bin/targets/ -name "*config.buildinfo*" | xargs -i mv -f {} config
+          find bin/targets/ -name "*config.buildinfo*" | xargs -i mv -f {} config
           echo "::set-output name=status::success"
     - name: 上传.config配置文件在github空间    
       if: steps.config.outputs.status == 'success' && env.UPLOAD_CONFIG == 'true'
@@ -172,7 +168,7 @@ jobs:
     - name: 整理固件文件夹
       id: organizer
       run: |
-        cd openwrt/bin/targets/*/*
+        cd bin/targets/*/*
         rm -rf packages && mkdir packages
         find -name "*.buildinfo*" | xargs -i mv -f {} packages
         find -name "*sha256sums*" | xargs -i mv -f {} packages
