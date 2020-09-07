@@ -101,12 +101,12 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         df -h
 
-    - name: 加载feeds和自定义设置
+    - name: 加载自定义设置
       run: |
         chmod +x $DIY_OP_SH
         $GITHUB_WORKSPACE/$DIY_OP_SH
 
-    - name: 下载安装feeds和自定义设置
+    - name: 下载feeds和安装自定义设置
       run: |
         ./scripts/feeds clean
         ./scripts/feeds update -a
